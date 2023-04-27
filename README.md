@@ -13,7 +13,7 @@ Follow the installation instructions for `mamba`.
 
 Then when you're ready, run the following in this directory:
 
-        $ mamba install -f environment.yml
+        $ mamba env create -f environment.yml
         $ mamba activate rf-spot
 
 You will then be ready to run the notebooks.
