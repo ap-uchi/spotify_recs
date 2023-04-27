@@ -1,4 +1,4 @@
-name: leyden
+name: rf-spot
 channels:
   - conda-forge
 dependencies:
