@@ -21,6 +21,7 @@ dependencies:
   - certifi=2022.12.7
   - cffi=1.15.1
   - charset-normalizer=3.1.0
+  - click=8.1.3
   - comm=0.1.3
   - contourpy=1.0.7
   - cryptography=40.0.2
@@ -163,6 +164,7 @@ dependencies:
   - python=3.11.3
   - python-dateutil=2.8.2
   - python-dotenv=1.0.0
+  - python-graphviz=0.20.1
   - python-tzdata=2023.3
   - python_abi=3.11
   - pytz=2023.3
@@ -213,4 +215,4 @@ dependencies:
   - zipp=3.15.0
   - zlib=1.2.13
   - zstd=1.5.2
-prefix: /home/apeng/mambaforge/envs/leyden
+prefix: /home/apeng/mambaforge/envs/rf-spot
