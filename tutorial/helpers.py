@@ -28,7 +28,7 @@ class Playlist():
     '''Access all audio features of a Spotify playlist in an machine-learning 
     friendly format.'''
 
-    def __init__(self, playlist_id):
+    def __init__(self, playlist_id, get_genres=True):
         ## Get track metadata
         self.playlist = sp.playlist(playlist_id=playlist_id)
         self.raw_tracks = self.playlist['tracks']['items']
@@ -38,15 +38,22 @@ class Playlist():
         ## All useful information
         self.track_ids = self.get_info('id')
         self.track_names = self.get_info('name')
-        self.track_artists = self.get_info('artist')
-
+        self.raw_track_artists = self.get_info('artists')
+        self.track_artists = self.raw_track_artists
+        
+        # Obtain genres if specified
+        if get_genres:
+            self.track_genres, self.unique_genres = self.get_genres()
+        else:
+            self.track_genres, self.unique_genres = (None, None)
+        
         audio_features = sp.audio_features(self.track_ids)
         self.audio_features = [{k.strip():v for k,v in d.items()} 
                                for d in audio_features]
         
         ## Machine Learning-friendly formatting
         self.data = pd.DataFrame(index=[self.track_ids, self.track_names], 
-                                 data=self.audio_features)
+                                        data=[self.audio_features])
         self.data = self.data.sort_index(axis='columns')
         self.data.columns = self.data.columns.str.strip()
         self.data.index.names = ['id', 'name']
@@ -74,7 +81,59 @@ class Playlist():
                             else None
                             for track in self.raw_tracks]
             return attributes
-        
+    
+    def get_genres(self):
+        '''Search for each song's genres based on album and artists. 
+        Will return a list of dictionaries, each with keys "artists" and 
+        "album" to indicate whether the genre source, if genres are 
+        detected. This method takes the longest because of the calls to 
+        spotipy.artist and spotipy.album.'''
+
+        genres = []
+        albums_list = []
+        artists_list = []
+        for t in self.raw_tracks:
+            song_genre_dict = {'artists':None, 'album':None}
+            album = sp.album(t["track"]["album"]["external_urls"]["spotify"])
+            artists = [sp.artist(a["external_urls"]["spotify"]) 
+                       for a in t["track"]["artists"]]
+
+            albums_list.append(album)
+            artists_list.append(artists)
+            if 'genres' in album.keys():
+                if len(album['genres']) > 0:
+                    song_genre_dict['album'] = album['genres']
+                else:
+                    artists_genres = [artist['genres'] 
+                                      if 'genres' in artist.keys() else None
+                                      for artist in artists]
+                    # Remove empty lists if the artist doesn't have genres
+                    artists_genres = list(filter(
+                        lambda x: len(x) > 0, artists_genres))
+                                    
+                    if any(artists_genres):
+                        # Join artist genres and only store unique ones
+                        artists_genres = np.unique(
+                            np.concatenate(artists_genres))
+                        song_genre_dict['artists'] = artists_genres
+
+            genres.append(song_genre_dict)
+
+        # clear out Nones
+        clean_album_genres = list(filter(lambda x: x is not None, 
+                                [g['album'] for g in genres]))
+        clean_artists_genres = list(filter(lambda x: x is not None,
+                                [g['artists'] for g in genres]))
+        if len(clean_album_genres) > 0:
+            clean_album_genres = np.concatenate(clean_album_genres)
+        if len(clean_artists_genres) > 0:
+            clean_artists_genres = np.concatenate(clean_artists_genres)
+
+        unique_genres = np.unique(np.concatenate((
+            [clean_album_genres, clean_artists_genres])))
+
+        return genres, unique_genres
+
     def set_like_status(self, like_labels:Union[Iterable, int]):
         '''Set the like status of songs'''
 
@@ -134,6 +193,12 @@ class Song():
 
     def __init__(self, song_id:str=None, song_name:str=None, song_dict:dict=None) -> None:
         for ikwarg, kwarg in enumerate([song_id, song_name, song_dict]):
+            
+            self.id = None
+            self.name = None
+            self.artist = None
+            self.attributes = None
+
             if kwarg is not None:
                 self.input = kwarg
                 if ikwarg == 0:
@@ -143,8 +208,8 @@ class Song():
                 elif ikwarg == 2:
                     self.id = self.get_info_from_dict(self.input, 'id')
                     self.name = self.get_info_from_dict(self.input, 'name')
+                    self.artist = self.get_info_from_dict(self.input, 'artists')
 
-                    
         self.audio_features = sp.audio_features(self.id)
         
         self.data = pd.DataFrame(data=self.audio_features).sort_index(axis='columns')
