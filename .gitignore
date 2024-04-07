@@ -1,6 +1,7 @@
 # Generated files
 *.pkl
 *.pdf
+Liked*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
