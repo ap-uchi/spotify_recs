@@ -53,7 +53,7 @@ class Playlist():
         
         ## Machine Learning-friendly formatting
         self.data = pd.DataFrame(index=[self.track_ids, self.track_names], 
-                                        data=[self.audio_features])
+                                        data=self.audio_features)
         self.data = self.data.sort_index(axis='columns')
         self.data.columns = self.data.columns.str.strip()
         self.data.index.names = ['id', 'name']
