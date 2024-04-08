@@ -65,52 +65,45 @@ class Playlist():
         A DataFrame of like labels.
     '''
 
-    def __init__(self, playlist_id, get_genres=True):
+    def __init__(self, playlist_id=None, playlist=None, get_genres=True):
+        """Access all audio features of a Spotify playlist in an machine-learning
+        friendly format.
+        
+        Arguments:
+        ----------
+        playlist_id : str
+            The Spotify playlist ID.
+        playlist : dict
+            The raw playlist data from Spotify.
+        get_genres : bool, default=True
+            Whether to get genres for each song in the playlist.
+        """
         ## Get track metadata
-        self.playlist = sp.playlist(playlist_id=playlist_id)
-        self.raw_tracks = self.playlist['tracks']['items']
-        self.track_attribute_labels = list(self.raw_tracks[0]['track'].keys())
-        self.length = len(self.raw_tracks)
-
-        ## All useful information
-        self.track_ids = self.get_info('id')
-        self.track_names = self.get_info('name')
-        self.raw_track_artists = self.get_info('artists')
-        self.track_artists = self.raw_track_artists
-
-        # Obtain genres if specified
-        if get_genres:
-            self.track_genres, self.unique_genres = self.get_genres()
+        if playlist_id is not None:
+            self.playlist = sp.playlist(playlist_id=playlist_id)
+        elif playlist is not None:
+            self.playlist = playlist
         else:
-            self.track_genres, self.unique_genres = (None, None)
+            raise ValueError("Please provide a playlist_id or playlist.")
+        
+        if 'tracks' in self.playlist.keys():
+            tracks = self.playlist['tracks']
+            if isinstance(tracks, dict) and 'items' in tracks.keys():
+                self.raw_tracks = tracks['items']
+            else:
+                self.raw_tracks = tracks
+        else:
+            raise ValueError("No tracks found in playlist.")
 
-        audio_features = sp.audio_features(self.track_ids)
-        self.audio_features = [{k.strip():v for k,v in d.items()} 
-                               for d in audio_features]
+        self.extract_from_tracklist(self.raw_tracks, get_genres)
+        self.format_data()
 
-        ## Machine Learning-friendly formatting
-        self.data = pd.DataFrame(index=[self.track_ids, self.track_names], 
-                                        data=self.audio_features)
-        self.data = self.data.sort_index(axis='columns')
-        self.data.columns = self.data.columns.str.strip()
-        self.data.index.names = ['id', 'name']
-        self.data['like'] = np.nan
-        self.audio_feature_labels = self.data.columns
+    def extract_from_tracklist(self, raw_tracks=None, get_genres:bool=True):
+        if raw_tracks is None:
+            raw_tracks = self.raw_tracks
 
-        ## ML specifically (e.g. random forest)
-        self.ml_feature_labels = list(set(self.audio_feature_labels)-\
-                {'type','id','uri','track_href','analysis_url','like'})
-        # X
-        self.ml_data = self.data[self.ml_feature_labels].sort_index(
-                                                        axis='columns')
-        # y, or "likes". Initialize to None
-        self.ml_likes = pd.DataFrame(index=self.ml_data.index, 
-                                     columns=['like'],
-                                     data=[np.nan]*self.length)
-
-    def extract_from_tracklist(self, raw_tracks, get_genres:bool=True):
-        self.track_attribute_labels = list(self.raw_tracks[0]['track'].keys())
-        self.length = len(self.raw_tracks)
+        self.track_attribute_labels = self.get_info()
+        self.length = len(raw_tracks)
 
         ## All useful information
         self.track_ids = self.get_info('id')
@@ -131,7 +124,7 @@ class Playlist():
     def format_data(self):
         ## Machine Learning-friendly formatting
         self.data = pd.DataFrame(index=[self.track_ids, self.track_names], 
-                                        data=[self.audio_features])
+                                        data=self.audio_features)
         self.data = self.data.sort_index(axis='columns')
         self.data.columns = self.data.columns.str.strip()
         self.data.index.names = ['id', 'name']
@@ -149,17 +142,25 @@ class Playlist():
                                      columns=['like'],
                                      data=[np.nan]*self.length)
 
-
-    def get_info(self, info_tag:str):
+    def get_info(self, info_tag:str=None):
         '''Unnest information from raw_tracks dict.'''
-
-        if any([info_tag in track['track'].keys() 
-                                            for track in self.raw_tracks]):
-            attributes = [track['track'][info_tag] 
-                            if info_tag in track['track'].keys()
-                            else None
-                            for track in self.raw_tracks]
-            return attributes
+        if 'track' in self.raw_tracks[0].keys():
+            tkey = 'track'
+        elif 'tracks' in self.raw_tracks[0].keys():
+            tkey = 'tracks'
+        else:
+            raise ValueError("No track information found in raw_tracks.")
+        
+        if info_tag is not None:
+            if any([info_tag in track[tkey].keys() 
+                                                for track in self.raw_tracks]):
+                attributes = [track[tkey][info_tag] 
+                                if info_tag in track[tkey].keys()
+                                else None
+                                for track in self.raw_tracks]
+                return attributes
+        else:
+            return list(self.raw_tracks[0][tkey].keys())
     
     def get_genres(self):
         '''Search for each song's genres based on album and artists. 
@@ -314,7 +315,7 @@ class Song():
             return attributes
 
 def grab_songs(nsongs=10, params:dict=None):
-    sp.recommendations(limit=nsongs)
+    playlist = sp.recommendations(limit=nsongs, **params)
 
     return playlist
 

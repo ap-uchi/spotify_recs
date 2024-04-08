@@ -215,23 +215,5 @@ class SpotipyRFClassifier(SpotipyModel):
         if batch_size is None:
             batch_size = int(nsongs*0.20)
 
-        # First filter songs by the Gaussian statistics of the audio features 
-        # in liked playlists
-        feature_mins = liked_songs.mean() - liked_songs.std()
-        feature_maxs = liked_songs.mean() + liked_songs.std()
-
-        feature_mins.index = 'min_' + feature_mins.index
-        feature_maxs.index = 'max_' + feature_maxs.index
         
-        # Get seed artists, songs, and tracks
-        seed_songs = liked_songs['id']
-        #seed_artists = 
-
-        new_songs = []
-
-        # Query based on these features
-        while len(new_songs) < nsongs:
-            #sp.recommendations()
-
-            spotify.grab_a_song()
         
