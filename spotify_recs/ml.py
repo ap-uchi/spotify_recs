@@ -207,13 +207,8 @@ class SpotipyRFClassifier(SpotipyModel):
                         )
                     )
 
-    def generate_playlist(self, nsongs:int, batch_size:int=None) -> list:
+    def generate_playlist(self, nsongs:int, batch_size:int=None,
+                          user_id:str=None, new_playlist_name:str=None) -> list:
         
-        numbered_ml_data = self.plc.ml_data.reset_index()
-        liked_songs = numbered_ml_data[self.plc.ml_likes.reset_index()['like'] == 1]
-
-        if batch_size is None:
-            batch_size = int(nsongs*0.20)
-
-        
-        
+        playlist = self.plc.generate_gaussian_playlist(self.model, nsongs, batch_size)
+        self.model.predict(playlist.ml_data)

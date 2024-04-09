@@ -13,7 +13,6 @@ from numpy import random
 import pandas as pd
 import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
-from sklearn import linear_model, model_selection
 
 # Set up Spotify API client credentials
 config = dotenv_values('.env')
@@ -24,6 +23,10 @@ client_credentials_manager = SpotifyClientCredentials(client_id,
                                                             client_secret)
 sp = spotipy.Spotify(client_credentials_manager=client_credentials_manager)
 
+
+int_features = ['duration_ms', 'key', 'mode', 'time_signature', 'tempo', 'loudness']
+float_features = ['valence', 'speechiness', 'instrumentalness', 'danceability',
+                  'liveness', 'acousticness', 'energy']
 
 class Playlist():
     '''Access all audio features of a Spotify playlist in an machine-learning 
@@ -94,9 +97,18 @@ class Playlist():
                 self.raw_tracks = tracks
         else:
             raise ValueError("No tracks found in playlist.")
-
+        
+        self.check_raw_track_keys()
         self.extract_from_tracklist(self.raw_tracks, get_genres)
         self.format_data()
+
+    def check_raw_track_keys(self):
+        if 'track' in self.raw_tracks[0].keys():
+            self.tkey = 'track'
+        elif 'tracks' in self.raw_tracks[0].keys():
+            self.tkey = 'tracks'
+        else:
+            self.tkey = None
 
     def extract_from_tracklist(self, raw_tracks=None, get_genres:bool=True):
         if raw_tracks is None:
@@ -134,6 +146,7 @@ class Playlist():
         ## ML specifically (e.g. random forest)
         self.ml_feature_labels = list(set(self.audio_feature_labels)-\
                 {'type','id','uri','track_href','analysis_url','like'})
+        
         # X
         self.ml_data = self.data[self.ml_feature_labels].sort_index(
                                                         axis='columns')
@@ -144,23 +157,30 @@ class Playlist():
 
     def get_info(self, info_tag:str=None):
         '''Unnest information from raw_tracks dict.'''
-        if 'track' in self.raw_tracks[0].keys():
-            tkey = 'track'
-        elif 'tracks' in self.raw_tracks[0].keys():
-            tkey = 'tracks'
-        else:
-            raise ValueError("No track information found in raw_tracks.")
         
         if info_tag is not None:
-            if any([info_tag in track[tkey].keys() 
+            if self.tkey is not None:
+                if any([info_tag in track[self.tkey].keys() 
                                                 for track in self.raw_tracks]):
-                attributes = [track[tkey][info_tag] 
-                                if info_tag in track[tkey].keys()
+                    attributes = [track[self.tkey][info_tag] 
+                                if info_tag in track[self.tkey].keys()
                                 else None
                                 for track in self.raw_tracks]
-                return attributes
+                    
+                    return attributes
+            else:
+                if any([info_tag in track.keys()
+                                            for track in self.raw_tracks]):
+                    attributes = [track[info_tag] 
+                                if info_tag in track.keys()
+                                else None
+                                for track in self.raw_tracks]
+                    return attributes
         else:
-            return list(self.raw_tracks[0][tkey].keys())
+            if self.tkey is not None:
+                return list(self.raw_tracks[0][self.tkey].keys())
+            else:
+                return list(self.raw_tracks[0].keys())
     
     def get_genres(self):
         '''Search for each song's genres based on album and artists. 
@@ -173,10 +193,15 @@ class Playlist():
         albums_list = []
         artists_list = []
         for t in self.raw_tracks:
+            if self.tkey is not None:
+                track_info = t["track"]
+            else:
+                track_info = t
+
             song_genre_dict = {'artists':None, 'album':None}
-            album = sp.album(t["track"]["album"]["external_urls"]["spotify"])
+            album = sp.album(track_info["album"]["external_urls"]["spotify"])
             artists = [sp.artist(a["external_urls"]["spotify"]) 
-                       for a in t["track"]["artists"]]
+                       for a in track_info["artists"]]
 
             albums_list.append(album)
             artists_list.append(artists)
@@ -244,6 +269,17 @@ class Playlist():
             self.data.loc[:,'like'] = likes
             self.ml_likes.loc[:,'like'] = likes
 
+    def generate_avg_playlist(self, nsongs:int, batch_size:int=None,
+                              user_id:str=None, new_playlist_name:str=None):
+        playlist = generate_avg_playlist(nsongs, self.ml_data, batch_size, 
+                                         user_id, new_playlist_name)
+        return playlist
+    
+    def generate_gaussian_playlist(self, nsongs:int, batch_size:int=None,
+                                      user_id:str=None, new_playlist_name:str=None):
+        playlist = generate_gaussian_playlist(nsongs, self.ml_data, batch_size, 
+                                                user_id, new_playlist_name)
+        return playlist
 
 class PlaylistCluster():
     '''A class to make combining playlists easier for machine learning.'''
@@ -267,6 +303,17 @@ class PlaylistCluster():
         self.playlist_list[nplaylist].set_like_status(likes)
         self.refresh_playlists_list()
 
+    def generate_avg_playlist(self, nsongs:int, batch_size:int=None,
+                              user_id:str=None, new_playlist_name:str=None):
+        playlist = generate_avg_playlist(nsongs, self.ml_data, batch_size,
+                                            user_id, new_playlist_name)
+        return playlist
+    
+    def generate_gaussian_playlist(self, nsongs:int, batch_size:int=None,
+                                    user_id:str=None, new_playlist_name:str=None):
+        playlist = generate_gaussian_playlist(nsongs, self.ml_data, batch_size,
+                                              user_id, new_playlist_name)
+        return playlist
 
 class Song():
     '''Access audio features of a Spotify song.'''
@@ -314,9 +361,135 @@ class Song():
             attributes = track['track'][info_tag] 
             return attributes
 
-def grab_songs(nsongs=10, params:dict=None):
-    playlist = sp.recommendations(limit=nsongs, **params)
+def limit_feature_range(features:pd.DataFrame):
+    """Make sure features are in the correct range for spotify queries"""
+    
+    # take feature_min if it is greater than 0, otherwise take 0
+    features.loc[float_features] = features.loc[float_features
+                                                ].apply(lambda x: min(max(x, 0), 1)).round(3)
+    features.loc[int_features] = features.loc[int_features
+                                                        ].round(0)
+    features.loc['time_signature'] = min(features.loc['time_signature'], 11)
+    features.loc['key'] = min(max(features.loc['key'], 0), 11)
+    features.loc['mode'] = min(max(features.loc['mode'], 0), 1)
 
+    return features
+
+def features_to_dict(features:pd.DataFrame):
+
+    ft_dict = {**features.loc[features.index.str.contains(
+                                '|'.join(float_features))].to_dict(),
+                **features.loc[features.index.str.contains(
+                                '|'.join(int_features))].astype(int).to_dict()}
+    return ft_dict
+
+
+def generate_avg_playlist(nsongs:int, ml_data:pd.DataFrame, batch_size:int=None,
+                              user_id:str=None, new_playlist_name:str=None):
+
+    ml_likes = ml_data.loc['like']
+    numbered_ml_data = ml_data.reset_index()
+    liked_songs = numbered_ml_data[ml_likes.reset_index()['like'] == 1]
+    liked_song_features = liked_songs.drop(columns=['id', 'name'])
+
+    if batch_size is None:
+        batch_size = int(nsongs*0.20)
+
+    feature_targets = liked_song_features.mean()
+    feature_targets = limit_feature_range(feature_targets)
+    feature_targets.index = 'target_' + feature_targets.index
+    ft_dict = features_to_dict(feature_targets)
+
+    playlist = playlist_from_songs(nsongs, liked_songs, ft_dict, user_id, new_playlist_name)
+        
+    return playlist
+
+def generate_gaussian_playlist(self, nsongs:int, ml_data:pd.DataFrame, std:float=1,
+                               batch_size:int=None,
+                                user_id:str=None, new_playlist_name:str=None):
+
+    ml_likes = ml_data.loc['like']
+    numbered_ml_data = ml_data.reset_index()
+    liked_songs = numbered_ml_data[ml_likes.reset_index()['like'] == 1]
+    liked_song_features = liked_songs.drop(columns=['id', 'name'])
+
+    if batch_size is None:
+        batch_size = int(nsongs*0.20)
+
+    # First filter songs by the Gaussian statistics of the audio features 
+    # in liked playlists
+    feature_mins = liked_song_features.mean() - liked_song_features.std() * std
+    feature_maxs = liked_song_features.mean() + liked_song_features.std() * std
+
+    feature_mins = limit_feature_range(feature_mins)
+    feature_maxs = limit_feature_range(feature_maxs)
+
+    feature_mins.index = 'min_' + feature_mins.index
+    feature_maxs.index = 'max_' + feature_maxs.index
+    
+    fmin_dict = features_to_dict(feature_mins)
+    fmax_dict = features_to_dict(feature_maxs)
+
+    fargs = {**fmin_dict, **fmax_dict}
+
+    playlist = playlist_from_songs(nsongs, liked_songs, fargs, user_id, new_playlist_name)
+
+    return playlist
+
+def generate_ml_playlist(nsongs:int, genres, model:object,
+                            batch_size:int=None, user_id:str=None, new_playlist_name:str=None):
+    
+    raw_playlist = generate_genre_playlist(batch_size, genres=genres)
+    X = raw_playlist.ml_data.reset_index().drop(columns=['id', 'name']).to_numpy()
+    y = model.predict(X)
+
+
+def playlist_from_songs(nsongs:int, liked_songs:pd.DataFrame, fargs:dict,
+                        user_id:str=None, new_playlist_name:str=None):
+    # Get seed artists, songs, and tracks
+    args = {
+        'seed_tracks': liked_songs['id'].to_list()[:4],
+    }
+    
+    if 'artist' in liked_songs.keys():
+        args['seed_artists'] = liked_songs['artist'].to_list()[:4]
+    if 'genre' in liked_songs.keys():
+        args['seed_genres'] = liked_songs['genre'].to_list()[:4]
+
+
+    tracks = sp.recommendations(limit=nsongs,
+                                **args, **fargs)
+
+    playlist = Playlist(playlist=tracks)
+
+    if new_playlist_name is not None:
+        if user_id is None:
+            user_id = client_id
+        sp.user_playlist_create(user_id, new_playlist_name, public=False)
+        sp.playlist_add_items(playlist_id=playlist.id, items=playlist.track_ids)
+        
+    return playlist
+
+def generate_genre_playlist(nsongs:int, genres, 
+                            user_id:str=None, new_playlist_name:str=None):
+    
+    if len(genres) > 4:
+        genres = genres[:4]
+
+    playlist = grab_songs(nsongs, params={'seed_genres':genres})
+
+    if new_playlist_name is not None:
+        if user_id is None:
+            user_id = client_id
+        sp.user_playlist_create(user_id, new_playlist_name, public=False)
+        sp.playlist_add_items(playlist_id=playlist.id, items=playlist.track_ids)
+    
+    return playlist
+
+def grab_songs(nsongs=10, params:dict=None):
+    tracks = sp.recommendations(limit=nsongs, **params)
+    playlist = Playlist(playlist=tracks)
+    
     return playlist
 
 def grab_a_song():
