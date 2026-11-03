@@ -12,12 +12,12 @@ Go through the notebooks in the following order:
 
 To run the notebooks, you will first need to install the package dependencies in a virtual environment. The easiest and fastest way to do this is using [`conda`](https://docs.conda.io/en/latest/).
 
-Follow the [installation instructions for `mamba`](https://mamba.readthedocs.io/en/latest/installation.html).
+Follow the [installation instructions for `conda`](https://www.anaconda.com/docs/getting-started/installation).
 
 Then when you're ready, run the following in this directory:
 
-        mamba env create -f environment.yml
-        mamba activate rf-spot
+        conda env create -f environment.yml
+        conda activate rf-spot
 
 You will then be ready to run the notebooks.
 
