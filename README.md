@@ -10,7 +10,7 @@ Go through the notebooks in the following order:
 
 [`2_playlist_generator.ipynb`](./tutorial/2_playlist_generator.ipynb)
 
-To run the notebooks, you will first need to install the package dependencies in a virtual environment. The easiest and fastest way to do this is using [`mamba`](https://mamba.readthedocs.io/en/latest/index.html), which is just a better and faster version of [`conda`](https://docs.conda.io/en/latest/).
+To run the notebooks, you will first need to install the package dependencies in a virtual environment. The easiest and fastest way to do this is using [`conda`](https://docs.conda.io/en/latest/).
 
 Follow the [installation instructions for `mamba`](https://mamba.readthedocs.io/en/latest/installation.html).
 
